@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env
+debug-scheduler.js
+test-airtable.js
 
 # vercel
 .vercel
