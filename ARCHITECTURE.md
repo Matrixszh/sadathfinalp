@@ -30,8 +30,7 @@
 
 ### C. Automated Scheduler
 *   **Library**: `src/lib/schedulerService.ts`
-*   **Trigger**: `/api/scheduler` triggered via Vercel Cron (every minute) or manually via Dashboard.
-*   **Realtime**: When admin pages are open, a lightweight client auto-triggers `/api/scheduler` every 30s to process new requests without relying on cron.
+*   **Trigger**: `/api/scheduler` triggered via Vercel Cron (every minute) or manually via a button in the admin Requests page.
 *   **Logic**:
     1.  Fetches `Pending` requests from Airtable.
     2.  Runs the request through the **Triage Engine**.

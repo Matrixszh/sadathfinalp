@@ -52,35 +52,8 @@ export default function IntakePage() {
 
       if (!res.ok) throw new Error(data.error || "Failed to submit request");
 
-      setProgress(40);
-      setMessage("AI triage in progress...");
-
-      const schedRes = await fetch("/api/scheduler", { method: "POST" });
-      const schedData = await schedRes.json();
-      setProgress(70);
-
-      if (!schedRes.ok) throw new Error(schedData.error || "Scheduling failed");
-
-      const result = Array.isArray(schedData.results)
-        ? schedData.results.find((r: any) => r.requestId === data.requestId)
-        : null;
-
-      if (result) {
-        setTriage({
-          department: result.triage?.department || result.department,
-          urgency: result.triage?.urgency,
-          confidence: result.triage?.confidence,
-        });
-        setAppointmentInfo({
-          time: result.time ? new Date(result.time).toLocaleString() : undefined,
-          doctorId: result.doctorId,
-        });
-        setMessage("Request scheduled successfully.");
-      } else {
-        setMessage("Request submitted. Scheduling will complete shortly.");
-      }
-
       setProgress(100);
+      setMessage("Request submitted. An admin can schedule from the Requests page.");
       setStatus("success");
       setForm({ name: "", email: "", phone: "", symptoms: "", preferredDate: "", specialty: "" });
     } catch (err: unknown) {
@@ -253,9 +226,7 @@ export default function IntakePage() {
                     />
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    {progress < 40 && "Submitting request..."}
-                    {progress >= 40 && progress < 70 && "AI triage processing..."}
-                    {progress >= 70 && progress < 100 && "Scheduling appointment..."}
+                    {progress < 100 && "Submitting request..."}
                     {progress === 100 && "Completed"}
                   </p>
                 </div>

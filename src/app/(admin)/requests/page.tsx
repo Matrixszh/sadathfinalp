@@ -1,6 +1,6 @@
 import { getBase, TABLE_APPOINTMENT_REQUESTS, TABLE_PATIENTS } from "@/lib/airtable";
 import { User, Clock, FileText } from "lucide-react";
-import AutoScheduler from "@/components/AutoScheduler";
+import RunSchedulerButton from "@/components/RunSchedulerButton";
 
 export const revalidate = 0;
 
@@ -26,7 +26,7 @@ export default async function RequestsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Intake Requests</h1>
           <p className="text-gray-500">Patient submissions pending triage or scheduling.</p>
         </div>
-        <AutoScheduler intervalMs={30000} />
+        <RunSchedulerButton />
       </div>
 
       <div className="grid gap-4">

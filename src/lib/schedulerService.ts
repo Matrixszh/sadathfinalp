@@ -1,15 +1,13 @@
-import { getBase, TABLE_APPOINTMENT_REQUESTS, TABLE_APPOINTMENTS, TABLE_TRIAGE_RESULTS } from "./airtable";
+import { getBase, TABLE_APPOINTMENT_REQUESTS, TABLE_APPOINTMENTS, TABLE_TRIAGE_RESULTS, TABLE_PATIENTS } from "./airtable";
 import { triageSymptoms, Urgency } from "./triageEngine";
+import { getPendingRequestsBatch, createTriageResult, createAppointment, updateRequestScheduledAtomic, destroyAppointment, destroyTriageResult, hasAppointmentForRequest } from "./dataAccess";
 
 const base = getBase();
 
 export async function processPendingRequests() {
   console.log("Checking for pending requests...");
   await reconcilePendingWithAppointments();
-  const pendingRequests = await base(TABLE_APPOINTMENT_REQUESTS).select({
-    filterByFormula: `{Status} = 'Pending'`,
-    maxRecords: 10 // Process in batches
-  }).all();
+  const pendingRequests = await getPendingRequestsBatch(10);
 
   console.log(`Found ${pendingRequests.length} pending requests.`);
   const results = [];
@@ -20,27 +18,38 @@ export async function processPendingRequests() {
       const symptoms = record.fields.Symptoms as string;
       const requestedSpecialty = record.fields.Specialty as string;
       const patientId = (record.fields.Patient as string[])?.[0];
+      const existingAppointment = (record.fields.Appointment as string[]) || [];
+      const status = record.fields.Status as string;
+      if (status !== "Pending" || existingAppointment.length > 0) {
+        continue;
+      }
 
       console.log(`Processing request ${requestId}...`);
 
-      // 1. Triage
-      const triage = await triageSymptoms(symptoms);
+      let name = "";
+      let email = "";
+      let phone = "";
+      if (patientId) {
+        try {
+          const p = await base(TABLE_PATIENTS).find(patientId);
+          name = String(p.fields.Name || "");
+          email = String(p.fields.Email || "");
+          phone = String(p.fields.Phone || "");
+        } catch {}
+      }
+      const triage = await triageSymptoms({
+        name,
+        email,
+        phone,
+        symptoms,
+        preferredDate: String(record.fields.PreferredDate || ""),
+        specialty: requestedSpecialty || ""
+      });
       console.log(`Triage Result:`, triage);
       
       const targetDepartment = requestedSpecialty || triage.department;
 
-      // Save Triage Result
-      const triageRecord = await base(TABLE_TRIAGE_RESULTS).create([
-        {
-          fields: {
-            Request: [requestId],
-            Department: triage.department,
-            Urgency: triage.urgency,
-            Confidence: triage.confidence,
-            Reasoning: triage.reasoning
-          }
-        }
-      ], { typecast: true });
+      const triageRecordId = await createTriageResult(requestId, triage);
 
       // 2. Determine Target Date based on Urgency
       const targetDate = getTargetDate(triage.urgency);
@@ -48,31 +57,21 @@ export async function processPendingRequests() {
       // 3. Find Slot (prevent double-booking)
       const appointmentTime = await findNextAvailableSlot(targetDate, targetDepartment);
 
-      // 4. Create Appointment
-      const appointment = await base(TABLE_APPOINTMENTS).create([
-        {
-          fields: {
-            Patient: patientId ? [patientId] : undefined, // Handle missing patient ID safely
-            Request: [requestId],
-            Department: targetDepartment,
-            StartTime: appointmentTime.toISOString(),
-            Status: "Confirmed",
-            Urgency: triage.urgency
-          }
-        }
-      ], { typecast: true });
+      const appointmentId = await createAppointment({
+        patientId,
+        requestId,
+        department: targetDepartment,
+        startIso: appointmentTime.toISOString(),
+        urgency: triage.urgency
+      });
 
-      // 5. Update Request Status
-      await base(TABLE_APPOINTMENT_REQUESTS).update([
-        {
-          id: requestId,
-          fields: {
-            Status: "Scheduled",
-            TriageResult: [triageRecord[0].id],
-            Appointment: [appointment[0].id]
-          }
-        }
-      ], { typecast: true });
+      const scheduledAtIso = new Date().toISOString();
+      const ok = await updateRequestScheduledAtomic(requestId, triageRecordId, appointmentId, scheduledAtIso, "System");
+      if (!ok) {
+        await destroyAppointment(appointmentId);
+        await destroyTriageResult(triageRecordId);
+        throw new Error("Atomic status update failed; rolled back appointment and triage result");
+      }
 
       results.push({
         requestId,
@@ -139,16 +138,21 @@ async function findNextAvailableSlot(targetDate: Date, department: string): Prom
 
 async function reconcilePendingWithAppointments() {
   try {
-    const toFix = await base(TABLE_APPOINTMENT_REQUESTS).select({
-      filterByFormula: `AND({Status} = 'Pending', ARRAYJOIN({Appointment}) != '')`,
-      fields: ["Status", "Appointment"],
+    const pending = await base(TABLE_APPOINTMENT_REQUESTS).select({
+      filterByFormula: `{Status} = 'Pending'`,
+      fields: ["Status"],
       maxRecords: 50
     }).all();
-    if (toFix.length > 0) {
-      await base(TABLE_APPOINTMENT_REQUESTS).update(
-        toFix.map(r => ({ id: r.id, fields: { Status: "Scheduled" } }))
-      );
-      console.log(`Reconciled ${toFix.length} pending requests with existing appointments.`);
+    const toUpdate = [];
+    for (const r of pending) {
+      const has = await hasAppointmentForRequest(r.id);
+      if (has) {
+        toUpdate.push({ id: r.id, fields: { Status: "Scheduled" } });
+      }
+    }
+    if (toUpdate.length > 0) {
+      await base(TABLE_APPOINTMENT_REQUESTS).update(toUpdate);
+      console.log(`Reconciled ${toUpdate.length} pending requests with existing appointments.`);
     }
   } catch (e) {
     console.error("Reconciliation failed:", e);
