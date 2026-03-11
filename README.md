@@ -6,10 +6,10 @@ A Next.js 16 application for automating hospital patient intake, triage, and app
 
 - **Patient Intake**: Web form for patients to submit symptoms and preferred dates.
 - **AI Triage Engine**: Automatically classifies symptoms by department (e.g., Cardiology, Neurology) and urgency (Low to Critical) using keyword rules and OpenAI.
-- **Auto-Scheduler**: Assigns appointments based on medical urgency (Critical = Same Day).
+- **Manual Scheduler**: Admin can trigger scheduling from the Requests page button.
 - **Admin Dashboard**: Real-time view of requests, appointments, and system status.
 - **Conversational Query**: Ask questions like "How many urgent cases today?" using natural language.
-- **Background Jobs**: Vercel Cron automatically processes pending requests every minute.
+
 
 ## Tech Stack
 
@@ -17,7 +17,7 @@ A Next.js 16 application for automating hospital patient intake, triage, and app
 - **UI**: React 19, Tailwind CSS, Lucide Icons, Framer Motion
 - **Database**: Airtable
 - **AI**: OpenAI API (GPT-4o)
-- **Deployment**: Vercel (Serverless + Cron)
+- **Deployment**: Vercel (Serverless; manual triggers, no cron)
 
 ## Setup Instructions
 
@@ -77,5 +77,4 @@ npm run dev
 
 ### 4. Deployment
 
-Deploy to Vercel. The `vercel.json` file is pre-configured for Cron Jobs.
-Ensure you add the Environment Variables in the Vercel Project Settings.
+Deploy to Vercel. No cron configuration is required. Ensure you add the Environment Variables in the Vercel Project Settings.

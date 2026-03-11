@@ -1,0 +1,85 @@
+import { NextResponse } from "next/server";
+import { getBase, TABLE_APPOINTMENTS, TABLE_PATIENTS } from "@/lib/airtable";
+
+export const runtime = "nodejs";
+
+export async function GET(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const q = url.searchParams.get("q") || "";
+    const status = url.searchParams.get("status") || "";
+    const department = url.searchParams.get("department") || "";
+    const page = parseInt(url.searchParams.get("page") || "1", 10);
+    const pageSize = parseInt(url.searchParams.get("pageSize") || "10", 10);
+
+    const base = getBase();
+    const records = await base(TABLE_APPOINTMENTS).select({
+      fields: ["Patient", "Request", "Department", "StartTime", "Status", "Urgency"],
+      sort: [{ field: "StartTime", direction: "asc" }]
+    }).all();
+
+    const patientIds = Array.from(new Set(records.flatMap(r => ((r.fields as any).Patient as string[]) || [])));
+    const nameById: Record<string, string> = {};
+    for (const pid of patientIds) {
+      try {
+        const p = await base(TABLE_PATIENTS).find(pid);
+        nameById[pid] = String((p.fields as any).Name || "");
+      } catch {}
+    }
+
+    let data: any[] = records.map(r => {
+      const f = r.fields as any;
+      const pid = (f.Patient as string[])?.[0] || "";
+      return { id: r.id, ...f, patientName: nameById[pid] || "" };
+    });
+    if (q) {
+      const qq = q.toLowerCase();
+      data = data.filter(d => String(d.Department || "").toLowerCase().includes(qq));
+    }
+    if (status) {
+      data = data.filter(d => (d.Status || "") === status);
+    }
+    if (department) {
+      data = data.filter(d => (d.Department || "") === department);
+    }
+
+    const total = data.length;
+    const start = (page - 1) * pageSize;
+    const paged = data.slice(start, start + pageSize);
+
+    return NextResponse.json({ data: paged, page, pageSize, total });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { patientId, requestId, department, startTime, status, urgency } = body;
+
+    if (!department || !startTime) {
+      return NextResponse.json({ error: "department and startTime are required" }, { status: 400 });
+    }
+
+    const base = getBase();
+    const created = await base(TABLE_APPOINTMENTS).create([
+      {
+        fields: {
+          Patient: patientId ? [patientId] : undefined,
+          Request: requestId ? [requestId] : undefined,
+          Department: department,
+          StartTime: new Date(startTime).toISOString(),
+          Status: status || "Confirmed",
+          Urgency: urgency || "Medium"
+        }
+      }
+    ], { typecast: true });
+
+    return NextResponse.json({ data: { id: created[0].id, ...created[0].fields } }, { status: 201 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

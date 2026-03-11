@@ -8,7 +8,7 @@
 *   **Backend**: Serverless API routes that handle data processing, AI triage, and scheduling logic.
 *   **Database**: Airtable serves as the central relational database.
 *   **Intelligence**: OpenAI (GPT-4o) provides advanced symptom analysis and conversational query capabilities.
-*   **Automation**: Vercel Cron triggers background jobs for real-time processing.
+*   **Scheduling**: Manual trigger via admin UI; no background cron jobs.
 
 ## 2. Core Modules
 
@@ -30,7 +30,7 @@
 
 ### C. Automated Scheduler
 *   **Library**: `src/lib/schedulerService.ts`
-*   **Trigger**: `/api/scheduler` triggered via Vercel Cron (every minute) or manually via a button in the admin Requests page.
+*   **Trigger**: `/api/scheduler` triggered manually via a button in the admin Requests page (no cron).
 *   **Logic**:
     1.  Fetches `Pending` requests from Airtable.
     2.  Runs the request through the **Triage Engine**.
