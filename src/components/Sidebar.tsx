@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { LayoutDashboard, Users, Calendar, Activity, MessageSquare, Stethoscope } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, Activity, Stethoscope, LogOut } from "lucide-react";
 import clsx from "clsx";
+import { useAuth } from "@/components/AuthProvider";
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -16,6 +17,7 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { logout } = useAuth();
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-card shadow-sm hidden md:flex flex-col">
@@ -64,6 +66,16 @@ export default function Sidebar() {
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
             Triage Engine Active
           </div>
+          <button
+            onClick={async () => {
+              await logout();
+              window.location.href = "/login";
+            }}
+            className="mt-3 w-full flex items-center justify-center gap-2 rounded-md bg-white border border-blue-200 px-2 py-1.5 text-xs text-blue-700 hover:bg-blue-100"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Logout
+          </button>
         </div>
       </div>
     </aside>
