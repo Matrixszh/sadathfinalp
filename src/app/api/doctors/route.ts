@@ -3,36 +3,32 @@ import { getBase, TABLE_DOCTORS, TABLE_APPOINTMENTS } from "@/lib/airtable";
 
 export const runtime = "nodejs";
 
-async function loadDoctorLoad(base: any, doctorId: string) {
-  try {
-    const appts = await base(TABLE_APPOINTMENTS).select({
-      fields: ["StartTime", "Status", "Doctor"],
-      maxRecords: 500
-    }).all();
-    const now = Date.now();
-    return appts.filter((a: any) => {
-      const f = a.fields || {};
-      const linkedDoctors = (f.Doctor as string[]) || [];
-      if (!linkedDoctors.includes(doctorId)) return false;
-      if (String(f.Status || "") === "Cancelled") return false;
-      const t = f.StartTime ? Date.parse(String(f.StartTime)) : NaN;
-      if (Number.isNaN(t)) return true;
-      return t >= now;
-    }).length;
-  } catch {
-    return 0;
-  }
-}
-
 export async function GET() {
   try {
     const base = getBase();
-    const records = await base(TABLE_DOCTORS).select({
+    const [records, appts] = await Promise.all([
+      base(TABLE_DOCTORS).select({
       sort: [{ field: "Name", direction: "asc" }]
-    }).all();
+      }).all(),
+      base(TABLE_APPOINTMENTS).select({
+        fields: ["StartTime", "Status", "Doctor"],
+        maxRecords: 500
+      }).all()
+    ]);
+    const now = Date.now();
+    const loadByDoctorId: Record<string, number> = {};
+    for (const a of appts as any[]) {
+      const f = a.fields || {};
+      if (String(f.Status || "") === "Cancelled") continue;
+      const t = f.StartTime ? Date.parse(String(f.StartTime)) : NaN;
+      if (!Number.isNaN(t) && t < now) continue;
+      const linkedDoctors = (f.Doctor as string[]) || [];
+      for (const did of linkedDoctors) {
+        loadByDoctorId[did] = (loadByDoctorId[did] || 0) + 1;
+      }
+    }
     const list = [];
     for (const r of records) {
-      const load = await loadDoctorLoad(base, r.id);
       list.push({
         id: r.id,
         name: (r.fields as any).Name,
@@ -40,7 +36,7 @@ export async function GET() {
         email: (r.fields as any).Email || "",
         phone: (r.fields as any).Phone || "",
         status: (r.fields as any).Status || "Active",
-        load
+        load: loadByDoctorId[r.id] || 0
       });
     }
     return NextResponse.json({ data: list });

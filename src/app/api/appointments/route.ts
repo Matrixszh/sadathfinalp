@@ -23,17 +23,15 @@ export async function GET(request: Request) {
     const doctorIds = Array.from(new Set(records.flatMap(r => ((r.fields as any).Doctor as string[]) || [])));
     const nameById: Record<string, string> = {};
     const doctorNameById: Record<string, string> = {};
-    for (const pid of patientIds) {
-      try {
-        const p = await base(TABLE_PATIENTS).find(pid);
-        nameById[pid] = String((p.fields as any).Name || "");
-      } catch {}
+    const [allPatients, allDoctors] = await Promise.all([
+      base(TABLE_PATIENTS).select({ fields: ["Name"], maxRecords: 500 }).all(),
+      base(TABLE_DOCTORS).select({ fields: ["Name"], maxRecords: 500 }).all()
+    ]);
+    for (const p of allPatients as any[]) {
+      if (patientIds.includes(p.id)) nameById[p.id] = String((p.fields || {}).Name || "");
     }
-    for (const did of doctorIds) {
-      try {
-        const d = await base(TABLE_DOCTORS).find(did);
-        doctorNameById[did] = String((d.fields as any).Name || "");
-      } catch {}
+    for (const d of allDoctors as any[]) {
+      if (doctorIds.includes(d.id)) doctorNameById[d.id] = String((d.fields || {}).Name || "");
     }
 
     let data: any[] = records.map(r => {

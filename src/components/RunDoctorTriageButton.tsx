@@ -9,10 +9,13 @@ export default function RunDoctorTriageButton() {
     setLoading(true);
     setStatus("");
     try {
-      const res = await fetch("/api/doctor-triage", { method: "POST" });
+      const res = await fetch("/api/doctor-triage?verbose=1&ai=0", { method: "POST" });
       const data = await res.json();
       const processed = data?.processed ?? 0;
-      setStatus(res.ok ? `Processed ${processed}` : "Error");
+      const inspected = data?.inspected ?? 0;
+      const needs = data?.needsAssignment ?? 0;
+      const duration = data?.durationMs ?? 0;
+      setStatus(res.ok ? `Processed ${processed}/${needs} (inspected ${inspected}) in ${duration}ms` : "Error");
     } catch {
       setStatus("Error");
     } finally {
