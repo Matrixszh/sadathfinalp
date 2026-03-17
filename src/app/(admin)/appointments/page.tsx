@@ -12,6 +12,7 @@ type Appointment = {
   Status?: string;
   Urgency?: string;
   patientName?: string;
+  doctorName?: string;
 };
 
 function AppointmentsClient() {
@@ -117,6 +118,7 @@ function AppointmentsClient() {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-6 py-4 font-medium text-gray-500">Patient</th>
+              <th className="px-6 py-4 font-medium text-gray-500">Doctor</th>
               <th className="px-6 py-4 font-medium text-gray-500">Department</th>
               <th className="px-6 py-4 font-medium text-gray-500">Date & Time</th>
               <th className="px-6 py-4 font-medium text-gray-500">Urgency</th>
@@ -139,6 +141,7 @@ function AppointmentsClient() {
                       <span className="font-medium text-gray-900">{item.patientName || `Patient ${(item.Patient?.[0] || "").slice(-4)}`}</span>
                     </div>
                   </td>
+                <td className="px-6 py-4 text-gray-600">{item.doctorName || "-"}</td>
                   <td className="px-6 py-4 text-gray-600">{item.Department as string}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 text-gray-900">

@@ -1,4 +1,4 @@
-import { getBase, TABLE_APPOINTMENT_REQUESTS, TABLE_APPOINTMENTS, TABLE_TRIAGE_RESULTS } from "./airtable";
+import { getBase, TABLE_APPOINTMENT_REQUESTS, TABLE_APPOINTMENTS, TABLE_TRIAGE_RESULTS, TABLE_DOCTORS } from "./airtable";
 
 const base = getBase();
 
@@ -73,4 +73,62 @@ export async function destroyAppointment(appointmentId: string) {
 
 export async function destroyTriageResult(triageId: string) {
   await base(TABLE_TRIAGE_RESULTS).destroy([triageId]);
+}
+
+export async function listActiveDoctorsBySpecialty(specialty: string) {
+  return base(TABLE_DOCTORS).select({
+    filterByFormula: `AND({Specialty} = '${specialty}', {Status} = 'Active')`,
+    fields: ["Name", "Specialty", "Email", "Phone", "Status"],
+    maxRecords: 100
+  }).all();
+}
+
+export async function computeDoctorLoad(doctorId: string, fromIso?: string) {
+  const startIso = fromIso || new Date().toISOString();
+  const appts = await base(TABLE_APPOINTMENTS).select({
+    fields: ["StartTime", "Status", "Doctor"],
+    maxRecords: 500
+  }).all();
+  const start = Date.parse(startIso);
+  return appts.filter(a => {
+    const f = a.fields as any;
+    const linkedDoctors = (f.Doctor as string[]) || [];
+    if (!linkedDoctors.includes(doctorId)) return false;
+    const status = String(f.Status || "");
+    if (status === "Cancelled") return false;
+    const t = f.StartTime ? Date.parse(String(f.StartTime)) : NaN;
+    if (Number.isNaN(t)) return true;
+    return t >= start;
+  }).length;
+}
+
+export async function pickDoctorByLoad(specialty: string) {
+  // Normalize department-to-specialty mapping
+  const mapped = normalizeSpecialtyForDoctor(specialty);
+  let docs = await listActiveDoctorsBySpecialty(mapped);
+  // Fallback: allow any doctor with the specialty if none active
+  if (docs.length === 0) {
+    docs = await base(TABLE_DOCTORS).select({
+      filterByFormula: `{Specialty} = '${mapped}'`,
+      fields: ["Name", "Specialty", "Email", "Status"],
+      maxRecords: 100
+    }).all();
+    if (docs.length === 0) return null;
+  }
+  const loads: Array<{ id: string; load: number }> = [];
+  for (const d of docs) {
+    const l = await computeDoctorLoad(d.id);
+    loads.push({ id: d.id, load: l });
+  }
+  loads.sort((a, b) => a.load - b.load);
+  return loads[0].id;
+}
+
+export function normalizeSpecialtyForDoctor(department: string): string {
+  switch ((department || "").trim()) {
+    case "General Medicine":
+      return "General Practice";
+    default:
+      return department;
+  }
 }

@@ -1,6 +1,6 @@
-import { getBase, TABLE_APPOINTMENT_REQUESTS, TABLE_APPOINTMENTS, TABLE_TRIAGE_RESULTS, TABLE_PATIENTS } from "./airtable";
+import { getBase, TABLE_APPOINTMENT_REQUESTS, TABLE_APPOINTMENTS, TABLE_TRIAGE_RESULTS, TABLE_PATIENTS, TABLE_DOCTORS } from "./airtable";
 import { triageSymptoms, Urgency } from "./triageEngine";
-import { getPendingRequestsBatch, createTriageResult, createAppointment, updateRequestScheduledAtomic, destroyAppointment, destroyTriageResult, hasAppointmentForRequest } from "./dataAccess";
+import { getPendingRequestsBatch, createTriageResult, createAppointment, updateRequestScheduledAtomic, destroyAppointment, destroyTriageResult, hasAppointmentForRequest, pickDoctorByLoad, normalizeSpecialtyForDoctor } from "./dataAccess";
 
 const base = getBase();
 
@@ -57,13 +57,70 @@ export async function processPendingRequests() {
       // 3. Find Slot (prevent double-booking)
       const appointmentTime = await findNextAvailableSlot(targetDate, targetDepartment);
 
-      const appointmentId = await createAppointment({
+      // Pick doctor by specialty (load-balanced)
+      let doctorId: string | null = null;
+      try {
+        doctorId = await pickDoctorByLoad(normalizeSpecialtyForDoctor(targetDepartment));
+      } catch {}
+
+      const appointmentPayload = {
         patientId,
         requestId,
         department: targetDepartment,
         startIso: appointmentTime.toISOString(),
         urgency: triage.urgency
-      });
+      } as any;
+      if (doctorId) {
+        try {
+          const created = await base(TABLE_APPOINTMENTS).create([
+            {
+              fields: {
+                Patient: patientId ? [patientId] : undefined,
+                Request: [requestId],
+                Department: targetDepartment,
+                Doctor: [doctorId],
+                StartTime: appointmentTime.toISOString(),
+                Status: "Confirmed",
+                Urgency: triage.urgency
+              }
+            }
+          ], { typecast: true });
+          var appointmentId = created[0].id;
+          // Ensure doctor is linked (some bases may ignore the field on create due to primary field constraints)
+          try {
+            const assigned = (created[0].fields as any).Doctor;
+            if (!assigned || (Array.isArray(assigned) && assigned.length === 0)) {
+              await base(TABLE_APPOINTMENTS).update([{ id: appointmentId, fields: { Doctor: [doctorId] } }], { typecast: true });
+            }
+          } catch (e) {
+            console.warn("Doctor post-assign update failed:", e);
+          }
+          // Also update doctor's load field if present
+          try {
+            const doc = await base(TABLE_DOCTORS).find(doctorId);
+            const loadCount = await computeDoctorUpcomingLoad(doctorId);
+            const hasCurrentLoad = Object.prototype.hasOwnProperty.call(doc.fields, "CurrentLoad");
+            const hasLoad = Object.prototype.hasOwnProperty.call(doc.fields, "Load");
+            if (hasCurrentLoad || hasLoad) {
+              await base(TABLE_DOCTORS).update([
+                { id: doctorId, fields: { [hasCurrentLoad ? "CurrentLoad" : "Load"]: loadCount } as any }
+              ], { typecast: true });
+            }
+          } catch {}
+        } catch (e) {
+          const id = await createAppointment(appointmentPayload);
+          var appointmentId = id;
+          // Attempt to set Doctor immediately after if create-with-doctor failed
+          try {
+            await base(TABLE_APPOINTMENTS).update([{ id: appointmentId, fields: { Doctor: [doctorId!] } }], { typecast: true });
+          } catch (e2) {
+            console.warn("Doctor assignment after create fallback failed:", e2);
+          }
+        }
+      } else {
+        const id = await createAppointment(appointmentPayload);
+        var appointmentId = id;
+      }
 
       const scheduledAtIso = new Date().toISOString();
       const ok = await updateRequestScheduledAtomic(requestId, triageRecordId, appointmentId, scheduledAtIso, "System");
@@ -72,6 +129,16 @@ export async function processPendingRequests() {
         await destroyTriageResult(triageRecordId);
         throw new Error("Atomic status update failed; rolled back appointment and triage result");
       }
+      // Final guard: ensure Doctor link is set on the appointment
+      try {
+        if (doctorId) {
+          const appt = await base(TABLE_APPOINTMENTS).find(appointmentId);
+          const linked = (appt.fields as any).Doctor;
+          if (!linked || (Array.isArray(linked) && linked.length === 0)) {
+            await base(TABLE_APPOINTMENTS).update([{ id: appointmentId, fields: { Doctor: [doctorId] } }], { typecast: true });
+          }
+        }
+      } catch {}
 
       results.push({
         requestId,
@@ -156,5 +223,18 @@ async function reconcilePendingWithAppointments() {
     }
   } catch (e) {
     console.error("Reconciliation failed:", e);
+  }
+}
+
+async function computeDoctorUpcomingLoad(doctorId: string) {
+  try {
+    const appts = await base(TABLE_APPOINTMENTS).select({
+      filterByFormula: `AND(IS_AFTER({StartTime}, '${new Date().toISOString()}'), SEARCH('${doctorId}', ARRAYJOIN({Doctor})))`,
+      fields: ["StartTime", "Doctor"],
+      maxRecords: 200
+    }).all();
+    return appts.length;
+  } catch {
+    return 0;
   }
 }

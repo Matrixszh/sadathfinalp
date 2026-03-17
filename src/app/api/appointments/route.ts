@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getBase, TABLE_APPOINTMENTS, TABLE_PATIENTS } from "@/lib/airtable";
+import { getBase, TABLE_APPOINTMENTS, TABLE_PATIENTS, TABLE_DOCTORS } from "@/lib/airtable";
+import { pickDoctorByLoad, normalizeSpecialtyForDoctor } from "@/lib/dataAccess";
 
 export const runtime = "nodejs";
 
@@ -14,23 +15,32 @@ export async function GET(request: Request) {
 
     const base = getBase();
     const records = await base(TABLE_APPOINTMENTS).select({
-      fields: ["Patient", "Request", "Department", "StartTime", "Status", "Urgency"],
+      fields: ["Patient", "Request", "Department", "Doctor", "StartTime", "Status", "Urgency"],
       sort: [{ field: "StartTime", direction: "asc" }]
     }).all();
 
     const patientIds = Array.from(new Set(records.flatMap(r => ((r.fields as any).Patient as string[]) || [])));
+    const doctorIds = Array.from(new Set(records.flatMap(r => ((r.fields as any).Doctor as string[]) || [])));
     const nameById: Record<string, string> = {};
+    const doctorNameById: Record<string, string> = {};
     for (const pid of patientIds) {
       try {
         const p = await base(TABLE_PATIENTS).find(pid);
         nameById[pid] = String((p.fields as any).Name || "");
       } catch {}
     }
+    for (const did of doctorIds) {
+      try {
+        const d = await base(TABLE_DOCTORS).find(did);
+        doctorNameById[did] = String((d.fields as any).Name || "");
+      } catch {}
+    }
 
     let data: any[] = records.map(r => {
       const f = r.fields as any;
       const pid = (f.Patient as string[])?.[0] || "";
-      return { id: r.id, ...f, patientName: nameById[pid] || "" };
+      const did = (f.Doctor as string[])?.[0] || "";
+      return { id: r.id, ...f, patientName: nameById[pid] || "", doctorName: doctorNameById[did] || "" };
     });
     if (q) {
       const qq = q.toLowerCase();
@@ -57,25 +67,29 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { patientId, requestId, department, startTime, status, urgency } = body;
+    const { patientId, requestId, department, startTime, status, urgency, doctorId } = body;
 
     if (!department || !startTime) {
       return NextResponse.json({ error: "department and startTime are required" }, { status: 400 });
     }
 
     const base = getBase();
-    const created = await base(TABLE_APPOINTMENTS).create([
-      {
-        fields: {
-          Patient: patientId ? [patientId] : undefined,
-          Request: requestId ? [requestId] : undefined,
-          Department: department,
-          StartTime: new Date(startTime).toISOString(),
-          Status: status || "Confirmed",
-          Urgency: urgency || "Medium"
-        }
-      }
-    ], { typecast: true });
+    let chosenDoctorId: string | null = doctorId || null;
+    if (!chosenDoctorId && department) {
+      try {
+        chosenDoctorId = await pickDoctorByLoad(normalizeSpecialtyForDoctor(department));
+      } catch {}
+    }
+    const fields: any = {
+      Patient: patientId ? [patientId] : undefined,
+      Request: requestId ? [requestId] : undefined,
+      Department: department,
+      StartTime: new Date(startTime).toISOString(),
+      Status: status || "Confirmed",
+      Urgency: urgency || "Medium"
+    };
+    if (chosenDoctorId) fields.Doctor = [chosenDoctorId];
+    const created = await base(TABLE_APPOINTMENTS).create([{ fields }], { typecast: true });
 
     return NextResponse.json({ data: { id: created[0].id, ...created[0].fields } }, { status: 201 });
   } catch (e: unknown) {

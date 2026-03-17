@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getBase, TABLE_APPOINTMENTS } from "@/lib/airtable";
+import { pickDoctorByLoad, normalizeSpecialtyForDoctor } from "@/lib/dataAccess";
 
 type ParamsPromise = { params: Promise<{ id: string }> };
 
@@ -27,6 +28,14 @@ export async function PUT(request: Request, ctx: ParamsPromise) {
     if (body.startTime) fields.StartTime = new Date(body.startTime).toISOString();
     if (body.status) fields.Status = body.status;
     if (body.urgency) fields.Urgency = body.urgency;
+    if (body.doctorId) fields.Doctor = [body.doctorId];
+    // Auto-assign a doctor if department changed and no doctor provided
+    if (body.department && !body.doctorId) {
+      try {
+        const doctorId = await pickDoctorByLoad(normalizeSpecialtyForDoctor(body.department));
+        if (doctorId) (fields as any).Doctor = [doctorId];
+      } catch {}
+    }
     const updated = await base(TABLE_APPOINTMENTS).update([{ id, fields: fields as unknown as any }], { typecast: true });
     return NextResponse.json({ data: { id: updated[0].id, ...updated[0].fields } });
   } catch (e: unknown) {

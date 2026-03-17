@@ -23,6 +23,8 @@ export const TABLE_PATIENTS = "Patients";
 export const TABLE_APPOINTMENT_REQUESTS = "AppointmentRequests";
 export const TABLE_TRIAGE_RESULTS = "TriageResults";
 export const TABLE_APPOINTMENTS = "Appointments";
+export const TABLE_DOCTORS = "Doctors";
+export const TABLE_RESCHEDULE_LOGS = "RescheduleLogs";
 
 // Legacy tables
 export const TABLE_LEADS = "Leads"; 

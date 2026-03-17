@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { LayoutDashboard, Users, Calendar, Activity, MessageSquare } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, Activity, MessageSquare, Stethoscope } from "lucide-react";
 import clsx from "clsx";
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Appointments", href: "/appointments", icon: Calendar },
   { name: "Requests", href: "/requests", icon: Users },
+  { name: "Doctors", href: "/doctors", icon: Stethoscope },
   { name: "Patient Intake", href: "/intake", icon: Activity }, // For easy access
 ];
 

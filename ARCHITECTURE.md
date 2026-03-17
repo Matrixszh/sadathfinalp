@@ -42,6 +42,18 @@
         *   **Low**: Schedules within **1 Week**.
     5.  **Slot Finding**: Currently simulates finding the next available slot between 9 AM - 5 PM.
     6.  Creates an **Appointment** record and updates the request status to `Scheduled`.
+    7.  **Doctor Assignment**: When a Doctors table exists, assigns an active doctor in the same specialty using load-balancing (fewest upcoming appointments).
+
+### E. Doctors Module
+*   **UI**: `src/app/(admin)/doctors/page.tsx`
+*   **API**:
+    *   `GET/POST` `src/app/api/doctors/route.ts`
+    *   `GET/PUT/DELETE` `src/app/api/doctors/[id]/route.ts`
+    *   `POST` `src/app/api/doctors/[id]/inactivate/route.ts` (rescheduling workflow)
+*   **Workflows**:
+    *   Inactivate doctor: finds upcoming appointments; either reschedules to next available doctor of the same specialty or marks appointments as postponed.
+    *   Audit logs: writes to `RescheduleLogs` if present (fields: Appointment, FromDoctor, ToDoctor, Action, At).
+    *   Notifications: optional email via environment SMTP configuration; skipped when env is not set.
 
 ### D. Conversational Query System
 *   **API**: `src/app/api/query/route.ts`
@@ -54,7 +66,7 @@
 
 ## 3. Data Schema (Airtable)
 
-The system relies on four relational tables. You must create these tables in your Airtable Base with the exact field names and types listed below.
+The system relies on five relational tables. You must create these tables in your Airtable Base with the exact field names and types listed below.
 
 ### 1. **Patients**
 *   `Name` (Single Line Text)
@@ -62,7 +74,14 @@ The system relies on four relational tables. You must create these tables in you
 *   `Phone` (Phone Number)
 *   `Notes` (Long Text) - Optional
 
-### 2. **AppointmentRequests**
+### 2. **Doctors**
+*   `Name` (Single Line Text)
+*   `Specialty` (Single Select): Cardiology, Neurology, Orthopedics, General Medicine, Dermatology
+*   `Email` (Email)
+*   `Phone` (Phone Number)
+*   `Status` (Single Select): Active, Inactive
+
+### 3. **AppointmentRequests**
 *   `Patient` (Link to **Patients**)
 *   `Symptoms` (Long Text)
 *   `PreferredDate` (Date)
@@ -72,17 +91,18 @@ The system relies on four relational tables. You must create these tables in you
 *   `Appointment` (Link to **Appointments**)
 *   `SubmittedAt` (Created Time)
 
-### 3. **TriageResults**
+### 4. **TriageResults**
 *   `Request` (Link to **AppointmentRequests**)
 *   `Department` (Single Line Text) - Output from AI
 *   `Urgency` (Single Select): Low, Medium, High, Critical
 *   `Confidence` (Number)
 *   `Reasoning` (Long Text)
 
-### 4. **Appointments**
+### 5. **Appointments**
 *   `Patient` (Link to **Patients**)
 *   `Request` (Link to **AppointmentRequests**)
 *   `Department` (Single Line Text)
+*   `Doctor` (Link to **Doctors**) - optional but recommended
 *   `StartTime` (Date & Time)
 *   `Status` (Single Select): Confirmed, Completed, Cancelled
 *   `Urgency` (Single Select): Low, Medium, High, Critical
